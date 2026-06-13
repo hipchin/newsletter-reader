@@ -405,11 +405,12 @@
 <script>
 /* ============ CONFIG ============ */
 const CLIENT_ID = "233081760785-oslo4tmmiuto6h56k4srnlbicsp6bnvs.apps.googleusercontent.com";
-const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const SCOPE = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/gmail.readonly";
 const DATA_FILENAME = "newsletter-data.json";
+const GMAIL_QUERY = "label:メルマガ";
 
 /* ============ STATE ============ */
-let data = loadLocal() || { newsletters: [], settings: { theme: "light", font: "sans", fontSize: 17 } };
+let data = loadLocal() || { newsletters: [], settings: { theme: "light", font: "sans", fontSize: 17 }, importedIds: [] };
 let accessToken = null;
 let driveFileId = null;
 let currentFilter = "all";
@@ -710,6 +711,7 @@ async function loadFromDrive() {
       if (!data.newsletters.length || (remote.newsletters && remote.newsletters.length >= data.newsletters.length)) {
         data = remote;
       }
+      if (!data.importedIds) data.importedIds = [];
       saveLocal();
       render();
       document.getElementById("syncStatus").textContent = "同期済み";
@@ -722,6 +724,7 @@ async function loadFromDrive() {
     console.error(e);
     document.getElementById("syncStatus").textContent = "同期エラー";
   }
+  checkGmail();
 }
 
 async function saveToDrive(forceCreate) {
@@ -759,6 +762,91 @@ async function saveToDrive(forceCreate) {
 
 /* ============ INIT ============ */
 render();
+
+/* ============ GMAIL IMPORT ============ */
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function extractBody(payload) {
+  // returns plain text body, preferring text/plain, falling back to stripped text/html
+  if (!payload) return "";
+  let plain = null, html = null;
+
+  function walk(part) {
+    if (!part) return;
+    if (part.mimeType === "text/plain" && part.body && part.body.data) {
+      plain = plain || base64UrlDecode(part.body.data);
+    } else if (part.mimeType === "text/html" && part.body && part.body.data) {
+      html = html || base64UrlDecode(part.body.data);
+    }
+    if (part.parts) part.parts.forEach(walk);
+  }
+  walk(payload);
+
+  if (plain) return plain.trim();
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  return "";
+}
+
+function getHeader(headers, name) {
+  const h = headers.find(x => x.name.toLowerCase() === name.toLowerCase());
+  return h ? h.value : "";
+}
+
+async function checkGmail() {
+  if (!accessToken) return;
+  try {
+    document.getElementById("syncStatus").textContent = "新着確認中…";
+    const listRes = await driveFetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=" + encodeURIComponent(GMAIL_QUERY) + "&maxResults=20"
+    );
+    const listJson = await listRes.json();
+    const messages = listJson.messages || [];
+    if (!data.importedIds) data.importedIds = [];
+
+    const newOnes = messages.filter(m => !data.importedIds.includes(m.id));
+    if (newOnes.length === 0) {
+      document.getElementById("syncStatus").textContent = "同期済み";
+      return;
+    }
+
+    for (const m of newOnes) {
+      const msgRes = await driveFetch(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full"
+      );
+      const msg = await msgRes.json();
+      const subject = getHeader(msg.payload.headers, "Subject") || "(無題)";
+      const body = extractBody(msg.payload) || "(本文を取得できませんでした)";
+
+      data.newsletters.push({
+        id: uid(),
+        title: subject,
+        content: body,
+        status: "unread",
+        favorite: false,
+        pos: 0,
+        addedAt: Number(msg.internalDate) || Date.now()
+      });
+      data.importedIds.push(m.id);
+    }
+
+    persist();
+    render();
+    document.getElementById("syncStatus").textContent = `${newOnes.length}件 新着取り込み済み`;
+  } catch (e) {
+    console.error(e);
+    document.getElementById("syncStatus").textContent = "Gmail取得エラー";
+  }
+}
 </script>
 </body>
 </html>
