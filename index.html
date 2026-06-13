@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Newsletter Reader</title>
+<style>
+  :root {
+    --accent: #3a6b5c;
+    --accent-soft: #e6efec;
+    --border: #e2e0db;
+    --text-sub: #8a8680;
+    --bg: #fbfaf7;
+    --surface: #ffffff;
+    --text: #2b2a28;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "Hiragino Sans", "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  #topbar {
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  #topbar h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+  #topbar .right { display: flex; gap: 8px; align-items: center; }
+
+  button {
+    font-family: inherit;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .icon-btn {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    font-size: 18px;
+  }
+  .icon-btn:active { background: var(--accent-soft); }
+
+  #syncStatus {
+    font-size: 11px;
+    color: var(--text-sub);
+    white-space: nowrap;
+  }
+
+  /* ---------- Filter tabs ---------- */
+  #tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: none;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+  }
+  .tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* ---------- List ---------- */
+  #list {
+    height: calc(100vh - 52px - 49px);
+    overflow-y: auto;
+    padding: 10px 14px 80px;
+  }
+  .empty {
+    text-align: center;
+    color: var(--text-sub);
+    margin-top: 60px;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    flex: 1;
+  }
+  .card-snippet {
+    font-size: 13px;
+    color: var(--text-sub);
+    margin-top: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.6;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #fff;
+  }
+  .badge.unread { background: #b0aca3; }
+  .badge.reading { background: #c98a3d; }
+  .badge.read { background: #6f9c87; }
+
+  .progress-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+  }
+
+  .star-btn {
+    font-size: 18px;
+    line-height: 1;
+    color: var(--border);
+    flex: none;
+  }
+  .star-btn.active { color: #d8a23a; }
+
+  .del-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 12px;
+    color: var(--text-sub);
+    padding: 4px 8px;
+  }
+
+  /* ---------- FAB ---------- */
+  #fab {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 26px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  }
+
+  /* ---------- Modal (add) ---------- */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: none;
+    align-items: flex-end;
+    z-index: 50;
+  }
+  .overlay.show { display: flex; }
+  .sheet {
+    background: var(--surface);
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 18px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .sheet h2 { margin: 0 0 12px; font-size: 16px; }
+  .sheet input, .sheet textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 10px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .sheet textarea {
+    flex: 1;
+    min-height: 35vh;
+    resize: vertical;
+    line-height: 1.7;
+  }
+  .sheet-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn {
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { color: var(--text-sub); }
+
+  /* ---------- Reader ---------- */
+  #reader {
+    position: fixed; inset: 0;
+    background: var(--reader-bg, #fff);
+    color: var(--reader-fg, #2b2a28);
+    display: none;
+    flex-direction: column;
+    z-index: 40;
+  }
+  #reader.show { display: flex; }
+  #reader-bar {
+    height: 50px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px;
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    flex: none;
+  }
+  #reader-bar .left, #reader-bar .right { display: flex; align-items: center; gap: 4px; }
+  #reader-title {
+    font-size: 13px;
+    font-weight: 600;
+    max-width: 38vw;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    opacity: 0.7;
+  }
+  #reader-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  #reader-content {
+    max-width: 640px;
+    margin: 0 auto;
+    white-space: pre-wrap;
+    line-height: 1.9;
+    font-size: var(--reader-fontsize, 17px);
+    font-family: var(--reader-fontfamily, -apple-system, "Hiragino Sans", sans-serif);
+    word-break: break-word;
+  }
+  #reader-bottom {
+    padding: 18px 24px 28px;
+    text-align: center;
+    color: var(--text-sub);
+    font-size: 13px;
+  }
+
+  /* ---------- Settings sheet ---------- */
+  .theme-row, .font-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .theme-swatch, .font-opt, .size-btn {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .theme-swatch.active, .font-opt.active, .size-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .size-row { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 14px; }
+  .size-row button {
+    width: 40px; height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font-size: 18px;
+  }
+  .settings-label {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Newsletter Reader</h1>
+  <div class="right">
+    <span id="syncStatus">未ログイン</span>
+    <button class="icon-btn" id="signinBtn" title="Googleでログイン">⇄</button>
+  </div>
+</div>
+
+<div id="tabs">
+  <button class="tab active" data-filter="all">すべて</button>
+  <button class="tab" data-filter="unread">未読</button>
+  <button class="tab" data-filter="reading">読書中</button>
+  <button class="tab" data-filter="read">完読</button>
+  <button class="tab" data-filter="favorite">★お気に入り</button>
+</div>
+
+<div id="list"></div>
+
+<button id="fab">＋</button>
+
+<!-- Add sheet -->
+<div class="overlay" id="addOverlay">
+  <div class="sheet">
+    <h2>メルマガを追加</h2>
+    <input id="addTitle" type="text" placeholder="タイトル">
+    <textarea id="addContent" placeholder="本文をここに貼り付け"></textarea>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="addCancel">キャンセル</button>
+      <button class="btn btn-primary" id="addSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings sheet -->
+<div class="overlay" id="settingsOverlay">
+  <div class="sheet">
+    <h2>表示設定</h2>
+    <div class="settings-label">テーマ</div>
+    <div class="theme-row">
+      <button class="theme-swatch" data-theme="light">ライト</button>
+      <button class="theme-swatch" data-theme="sepia">セピア</button>
+      <button class="theme-swatch" data-theme="dark">ダーク</button>
+    </div>
+    <div class="settings-label">フォント</div>
+    <div class="font-row">
+      <button class="font-opt" data-font="sans">ゴシック</button>
+      <button class="font-opt" data-font="serif">明朝</button>
+    </div>
+    <div class="settings-label">文字サイズ</div>
+    <div class="size-row">
+      <button id="sizeDown">A−</button>
+      <span id="sizeLabel">17px</span>
+      <button id="sizeUp">A＋</button>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-primary" id="settingsClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reader -->
+<div id="reader">
+  <div id="reader-bar">
+    <div class="left">
+      <button class="icon-btn" id="readerBack">←</button>
+      <span id="reader-title"></span>
+    </div>
+    <div class="right">
+      <button class="icon-btn" id="readerStar">☆</button>
+      <button class="icon-btn" id="readerSettings">Aa</button>
+      <button class="icon-btn" id="readerDone">✓</button>
+    </div>
+  </div>
+  <div id="reader-body">
+    <div id="reader-content"></div>
+    <div id="reader-bottom"></div>
+  </div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+/* ============ CONFIG ============ */
+const CLIENT_ID = "233081760785-oslo4tmmiuto6h56k4srnlbicsp6bnvs.apps.googleusercontent.com";
+const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const DATA_FILENAME = "newsletter-data.json";
+
+/* ============ STATE ============ */
+let data = loadLocal() || { newsletters: [], settings: { theme: "light", font: "sans", fontSize: 17 } };
+let accessToken = null;
+let driveFileId = null;
+let currentFilter = "all";
+let openId = null;
+let saveTimer = null;
+let tokenClient = null;
+
+/* ============ LOCAL STORAGE ============ */
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem("nl-data");
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveLocal() {
+  localStorage.setItem("nl-data", JSON.stringify(data));
+}
+
+/* ============ UTIL ============ */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ============ RENDER LIST ============ */
+function render() {
+  applySettings();
+  const list = document.getElementById("list");
+  let items = data.newsletters.slice().sort((a,b) => b.addedAt - a.addedAt);
+
+  if (currentFilter === "unread") items = items.filter(n => n.status === "unread");
+  else if (currentFilter === "reading") items = items.filter(n => n.status === "reading");
+  else if (currentFilter === "read") items = items.filter(n => n.status === "read");
+  else if (currentFilter === "favorite") items = items.filter(n => n.favorite);
+
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty">表示するメルマガがありません<br>右下の「＋」から追加してください</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(n => {
+    const snippet = n.content.replace(/\s+/g, " ").slice(0, 90);
+    const progress = n.content.length ? Math.min(100, Math.round((n.pos / n.content.length) * 100)) : 0;
+    const badgeLabel = { unread: "未読", reading: `読書中 ${progress}%`, read: "完読" }[n.status];
+    return `
+      <div class="card" data-id="${n.id}">
+        <div class="card-top">
+          <div class="card-title">${escapeHtml(n.title || "(無題)")}</div>
+          <button class="star-btn ${n.favorite ? "active" : ""}" data-star="${n.id}">${n.favorite ? "★" : "☆"}</button>
+        </div>
+        <div class="card-snippet">${escapeHtml(snippet)}</div>
+        <div class="card-meta">
+          <span class="badge ${n.status}">${badgeLabel}</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${n.status === 'read' ? 100 : progress}%"></div></div>
+        <button class="del-btn" data-del="${n.id}">削除</button>
+      </div>`;
+  }).join("");
+}
+
+/* ============ TABS ============ */
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    currentFilter = tab.dataset.filter;
+    render();
+  });
+});
+
+/* ============ LIST INTERACTIONS ============ */
+document.getElementById("list").addEventListener("click", e => {
+  const star = e.target.closest("[data-star]");
+  const del = e.target.closest("[data-del]");
+  const card = e.target.closest(".card");
+
+  if (star) {
+    const n = data.newsletters.find(x => x.id === star.dataset.star);
+    n.favorite = !n.favorite;
+    persist();
+    render();
+    return;
+  }
+  if (del) {
+    if (confirm("このメルマガを削除しますか？")) {
+      data.newsletters = data.newsletters.filter(x => x.id !== del.dataset.del);
+      persist();
+      render();
+    }
+    return;
+  }
+  if (card) openReader(card.dataset.id);
+});
+
+/* ============ ADD SHEET ============ */
+const addOverlay = document.getElementById("addOverlay");
+document.getElementById("fab").addEventListener("click", () => {
+  document.getElementById("addTitle").value = "";
+  document.getElementById("addContent").value = "";
+  addOverlay.classList.add("show");
+});
+document.getElementById("addCancel").addEventListener("click", () => addOverlay.classList.remove("show"));
+document.getElementById("addSave").addEventListener("click", () => {
+  const title = document.getElementById("addTitle").value.trim();
+  const content = document.getElementById("addContent").value;
+  if (!content.trim()) { alert("本文を入力してください"); return; }
+  data.newsletters.push({
+    id: uid(),
+    title: title || "(無題)",
+    content,
+    status: "unread",
+    favorite: false,
+    pos: 0,
+    addedAt: Date.now()
+  });
+  persist();
+  render();
+  addOverlay.classList.remove("show");
+});
+
+/* ============ READER ============ */
+const reader = document.getElementById("reader");
+const readerBody = document.getElementById("reader-body");
+const readerContent = document.getElementById("reader-content");
+
+function openReader(id) {
+  const n = data.newsletters.find(x => x.id === id);
+  if (!n) return;
+  openId = id;
+  document.getElementById("reader-title").textContent = n.title;
+  readerContent.textContent = n.content;
+  readerContent.dataset.placeholder = "x";
+  document.getElementById("reader-bottom").textContent = "";
+  reader.classList.add("show");
+  updateStarIcon();
+
+  if (n.status === "unread") {
+    n.status = "reading";
+    persist();
+    render();
+  }
+
+  // restore scroll position
+  requestAnimationFrame(() => {
+    const max = readerBody.scrollHeight - readerBody.clientHeight;
+    if (max > 0 && n.pos) {
+      const frac = n.pos / n.content.length;
+      readerBody.scrollTop = frac * max;
+    }
+    if (n.status === "read") {
+      document.getElementById("reader-bottom").textContent = "ここまで読みました";
+    }
+  });
+}
+
+function closeReader() {
+  reader.classList.remove("show");
+  openId = null;
+  render();
+}
+document.getElementById("readerBack").addEventListener("click", closeReader);
+
+readerBody.addEventListener("scroll", () => {
+  if (!openId) return;
+  const n = data.newsletters.find(x => x.id === openId);
+  if (!n) return;
+  const max = readerBody.scrollHeight - readerBody.clientHeight;
+  const frac = max > 0 ? readerBody.scrollTop / max : 1;
+  n.pos = Math.round(frac * n.content.length);
+  if (frac > 0.97 && n.status !== "read") {
+    n.status = "read";
+    document.getElementById("reader-bottom").textContent = "ここまで読みました";
+  }
+  debouncedPersist();
+});
+
+document.getElementById("readerStar").addEventListener("click", () => {
+  const n = data.newsletters.find(x => x.id === openId);
+  n.favorite = !n.favorite;
+  updateStarIcon();
+  persist();
+});
+function updateStarIcon() {
+  const n = data.newsletters.find(x => x.id === openId);
+  document.getElementById("readerStar").textContent = n.favorite ? "★" : "☆";
+}
+
+document.getElementById("readerDone").addEventListener("click", () => {
+  const n = data.newsletters.find(x => x.id === openId);
+  n.status = "read";
+  persist();
+  closeReader();
+});
+
+/* ============ SETTINGS ============ */
+const settingsOverlay = document.getElementById("settingsOverlay");
+document.getElementById("readerSettings").addEventListener("click", () => settingsOverlay.classList.add("show"));
+document.getElementById("settingsClose").addEventListener("click", () => settingsOverlay.classList.remove("show"));
+
+document.querySelectorAll(".theme-swatch").forEach(b => {
+  b.addEventListener("click", () => {
+    data.settings.theme = b.dataset.theme;
+    applySettings();
+    persist();
+  });
+});
+document.querySelectorAll(".font-opt").forEach(b => {
+  b.addEventListener("click", () => {
+    data.settings.font = b.dataset.font;
+    applySettings();
+    persist();
+  });
+});
+document.getElementById("sizeUp").addEventListener("click", () => {
+  data.settings.fontSize = Math.min(28, data.settings.fontSize + 1);
+  applySettings(); persist();
+});
+document.getElementById("sizeDown").addEventListener("click", () => {
+  data.settings.fontSize = Math.max(13, data.settings.fontSize - 1);
+  applySettings(); persist();
+});
+
+function applySettings() {
+  const s = data.settings;
+  const themes = {
+    light: { bg: "#fdfcf9", fg: "#2b2a28" },
+    sepia: { bg: "#f3ead9", fg: "#5b4636" },
+    dark:  { bg: "#1c1c1c", fg: "#e6e4df" }
+  };
+  const t = themes[s.theme] || themes.light;
+  document.documentElement.style.setProperty("--reader-bg", t.bg);
+  document.documentElement.style.setProperty("--reader-fg", t.fg);
+  document.documentElement.style.setProperty("--reader-fontsize", s.fontSize + "px");
+  document.documentElement.style.setProperty("--reader-fontfamily",
+    s.font === "serif" ? "'Hiragino Mincho ProN', serif" : "-apple-system, 'Hiragino Sans', sans-serif");
+
+  document.querySelectorAll(".theme-swatch").forEach(b => b.classList.toggle("active", b.dataset.theme === s.theme));
+  document.querySelectorAll(".font-opt").forEach(b => b.classList.toggle("active", b.dataset.font === s.font));
+  document.getElementById("sizeLabel").textContent = s.fontSize + "px";
+}
+
+/* ============ PERSISTENCE ============ */
+function persist() {
+  saveLocal();
+  debouncedDriveSave();
+}
+function debouncedPersist() {
+  saveLocal();
+  debouncedDriveSave();
+}
+function debouncedDriveSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToDrive, 1500);
+}
+
+/* ============ GOOGLE AUTH & DRIVE ============ */
+window.addEventListener("load", () => {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: (resp) => {
+      if (resp.access_token) {
+        accessToken = resp.access_token;
+        document.getElementById("syncStatus").textContent = "同期中…";
+        loadFromDrive();
+      }
+    }
+  });
+});
+
+document.getElementById("signinBtn").addEventListener("click", () => {
+  tokenClient.requestAccessToken();
+});
+
+async function driveFetch(url, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + accessToken });
+  return fetch(url, opts);
+}
+
+async function findDataFile() {
+  const res = await driveFetch(
+    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='" + DATA_FILENAME + "'&fields=files(id,modifiedTime)"
+  );
+  const json = await res.json();
+  return (json.files && json.files[0]) || null;
+}
+
+async function loadFromDrive() {
+  try {
+    const file = await findDataFile();
+    if (file) {
+      driveFileId = file.id;
+      const res = await driveFetch("https://www.googleapis.com/drive/v3/files/" + file.id + "?alt=media");
+      const remote = await res.json();
+      // merge: prefer remote if it has more newsletters or local is empty
+      if (!data.newsletters.length || (remote.newsletters && remote.newsletters.length >= data.newsletters.length)) {
+        data = remote;
+      }
+      saveLocal();
+      render();
+      document.getElementById("syncStatus").textContent = "同期済み";
+    } else {
+      // no remote file yet -> create from current local data
+      await saveToDrive(true);
+      document.getElementById("syncStatus").textContent = "同期済み";
+    }
+  } catch (e) {
+    console.error(e);
+    document.getElementById("syncStatus").textContent = "同期エラー";
+  }
+}
+
+async function saveToDrive(forceCreate) {
+  if (!accessToken) return;
+  try {
+    const content = JSON.stringify(data);
+    if (!driveFileId && !forceCreate) {
+      const file = await findDataFile();
+      if (file) driveFileId = file.id;
+    }
+    if (driveFileId) {
+      await driveFetch("https://www.googleapis.com/upload/drive/v3/files/" + driveFileId + "?uploadType=media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: content
+      });
+    } else {
+      const metadata = { name: DATA_FILENAME, parents: ["appDataFolder"] };
+      const form = new FormData();
+      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+      form.append("file", new Blob([content], { type: "application/json" }));
+      const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+        method: "POST",
+        body: form
+      });
+      const json = await res.json();
+      driveFileId = json.id;
+    }
+    document.getElementById("syncStatus").textContent = "同期済み";
+  } catch (e) {
+    console.error(e);
+    document.getElementById("syncStatus").textContent = "同期エラー";
+  }
+}
+
+/* ============ INIT ============ */
+render();
+</script>
+</body>
+</html>
