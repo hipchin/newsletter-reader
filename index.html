@@ -676,11 +676,23 @@ window.addEventListener("load", () => {
     callback: (resp) => {
       if (resp.access_token) {
         accessToken = resp.access_token;
+        const expiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000;
+        localStorage.setItem("nl-token", JSON.stringify({ token: accessToken, expiresAt }));
         document.getElementById("syncStatus").textContent = "同期中…";
         loadFromDrive();
       }
     }
   });
+
+  // try to restore a still-valid token from a previous session
+  try {
+    const saved = JSON.parse(localStorage.getItem("nl-token") || "null");
+    if (saved && saved.token && saved.expiresAt > Date.now() + 60000) {
+      accessToken = saved.token;
+      document.getElementById("syncStatus").textContent = "同期中…";
+      loadFromDrive();
+    }
+  } catch (e) {}
 });
 
 document.getElementById("signinBtn").addEventListener("click", () => {
@@ -722,7 +734,8 @@ async function loadFromDrive() {
     }
   } catch (e) {
     console.error(e);
-    document.getElementById("syncStatus").textContent = "同期エラー";
+    document.getElementById("syncStatus").textContent = "再ログインが必要です";
+    localStorage.removeItem("nl-token");
   }
   checkGmail();
 }
