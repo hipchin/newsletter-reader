@@ -283,6 +283,62 @@
     font-family: var(--reader-fontfamily, -apple-system, "Hiragino Sans", sans-serif);
     word-break: break-word;
   }
+  #reader-content.rich {
+    white-space: normal;
+  }
+  #reader-content.rich * {
+    max-width: 100%;
+    font-family: inherit !important;
+    color: inherit !important;
+    background: transparent !important;
+  }
+  #reader-content.rich img,
+  #reader-content.rich table {
+    max-width: 100%;
+    height: auto;
+  }
+  #reader-content.rich table {
+    display: block;
+    overflow-x: auto;
+  }
+  #reader-content.rich h1,
+  #reader-content.rich h2,
+  #reader-content.rich h3,
+  #reader-content.rich h4 {
+    font-weight: 700;
+    line-height: 1.5;
+    margin: 1.4em 0 0.6em;
+  }
+  #reader-content.rich h1 { font-size: 1.5em; }
+  #reader-content.rich h2 { font-size: 1.3em; }
+  #reader-content.rich h3 { font-size: 1.15em; }
+  #reader-content.rich p {
+    margin: 0 0 1em;
+  }
+  #reader-content.rich b,
+  #reader-content.rich strong {
+    font-weight: 700;
+  }
+  #reader-content.rich a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  #reader-content.rich ul,
+  #reader-content.rich ol {
+    margin: 0 0 1em 1.4em;
+  }
+  #reader-content.rich hr {
+    border: none;
+    border-top: 1px solid currentColor;
+    opacity: 0.2;
+    margin: 1.6em 0;
+  }
+  #reader-content.rich blockquote {
+    border-left: 3px solid currentColor;
+    opacity: 0.85;
+    padding-left: 1em;
+    margin: 0 0 1em;
+  }
   #reader-bottom {
     padding: 18px 24px 28px;
     text-align: center;
@@ -548,8 +604,13 @@ function openReader(id) {
   if (!n) return;
   openId = id;
   document.getElementById("reader-title").textContent = n.title;
-  readerContent.textContent = n.content;
-  readerContent.dataset.placeholder = "x";
+  if (n.html) {
+    readerContent.innerHTML = n.html;
+    readerContent.classList.add("rich");
+  } else {
+    readerContent.textContent = n.content;
+    readerContent.classList.remove("rich");
+  }
   document.getElementById("reader-bottom").textContent = "";
   reader.classList.add("show");
   updateStarIcon();
@@ -792,8 +853,8 @@ function base64UrlDecode(str) {
 }
 
 function extractBody(payload) {
-  // returns plain text body, preferring text/plain, falling back to stripped text/html
-  if (!payload) return "";
+  // returns { html, text } - prefers HTML (for formatting), falls back to plain text
+  if (!payload) return { html: null, text: "" };
   let plain = null, html = null;
 
   function walk(part) {
@@ -807,12 +868,40 @@ function extractBody(payload) {
   }
   walk(payload);
 
-  if (plain) return plain.trim();
   if (html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+    return { html: sanitizeHtml(html), text: htmlToText(html) };
   }
-  return "";
+  if (plain) return { html: null, text: plain.trim() };
+  return { html: null, text: "" };
+}
+
+function htmlToText(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  // remove dangerous elements
+  doc.querySelectorAll("script, style, iframe, object, embed, link, meta, form, input, button").forEach(el => el.remove());
+  // strip dangerous attributes
+  doc.querySelectorAll("*").forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("on") || name === "style" || name === "id" || name === "class") {
+        el.removeAttribute(attr.name);
+      }
+      if ((name === "href" || name === "src") && /^\s*javascript:/i.test(attr.value)) {
+        el.removeAttribute(attr.name);
+      }
+    });
+    // open links in new tab
+    if (el.tagName === "A") {
+      el.setAttribute("target", "_blank");
+      el.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+  return doc.body.innerHTML;
 }
 
 function getHeader(headers, name) {
@@ -843,12 +932,14 @@ async function checkGmail() {
       );
       const msg = await msgRes.json();
       const subject = getHeader(msg.payload.headers, "Subject") || "(無題)";
-      const body = extractBody(msg.payload) || "(本文を取得できませんでした)";
+      const body = extractBody(msg.payload);
+      const text = body.text || "(本文を取得できませんでした)";
 
       data.newsletters.push({
         id: uid(),
         title: subject,
-        content: body,
+        content: text,
+        html: body.html || null,
         status: "unread",
         favorite: false,
         pos: 0,
