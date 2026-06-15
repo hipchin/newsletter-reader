@@ -345,6 +345,24 @@
     color: var(--text-sub);
     font-size: 13px;
   }
+  #scrollTopBtn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 18px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    opacity: 0.85;
+    z-index: 45;
+  }
+  #scrollTopBtn.show { display: flex; }
+  #reader:not(.show) ~ #scrollTopBtn { display: none !important; }
 
   /* ---------- Settings sheet ---------- */
   .theme-row, .font-row {
@@ -461,6 +479,7 @@
     <div id="reader-bottom"></div>
   </div>
 </div>
+<button id="scrollTopBtn" title="冒頭に戻る">↑</button>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -612,6 +631,7 @@ function openReader(id) {
     readerContent.classList.remove("rich");
   }
   document.getElementById("reader-bottom").textContent = "";
+  document.getElementById("scrollTopBtn").classList.remove("show");
   reader.classList.add("show");
   updateStarIcon();
 
@@ -636,6 +656,7 @@ function openReader(id) {
 
 function closeReader() {
   reader.classList.remove("show");
+  document.getElementById("scrollTopBtn").classList.remove("show");
   openId = null;
   render();
 }
@@ -652,7 +673,12 @@ readerBody.addEventListener("scroll", () => {
     n.status = "read";
     document.getElementById("reader-bottom").textContent = "ここまで読みました";
   }
+  document.getElementById("scrollTopBtn").classList.toggle("show", readerBody.scrollTop > 200);
   debouncedPersist();
+});
+
+document.getElementById("scrollTopBtn").addEventListener("click", () => {
+  readerBody.scrollTo({ top: 0, behavior: "smooth" });
 });
 
 document.getElementById("readerStar").addEventListener("click", () => {
