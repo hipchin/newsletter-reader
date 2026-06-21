@@ -397,6 +397,49 @@
     color: var(--text-sub);
     margin-bottom: 8px;
   }
+
+  .bookmark-list {
+    overflow-y: auto;
+    max-height: 50vh;
+    margin-bottom: 12px;
+  }
+  .bookmark-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .bookmark-item:last-child { border-bottom: none; }
+  .bookmark-main {
+    flex: 1;
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .bookmark-snippet {
+    color: var(--text-sub);
+    font-size: 12px;
+    margin-top: 2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .bookmark-del {
+    font-size: 12px;
+    color: var(--text-sub);
+    padding: 4px 8px;
+    flex: none;
+  }
+  .bookmark-empty {
+    text-align: center;
+    color: var(--text-sub);
+    font-size: 13px;
+    padding: 24px 0;
+  }
 </style>
 </head>
 <body>
@@ -461,6 +504,17 @@
   </div>
 </div>
 
+<!-- Bookmark list sheet -->
+<div class="overlay" id="bookmarkOverlay">
+  <div class="sheet">
+    <h2>しおり一覧</h2>
+    <div id="bookmarkList" class="bookmark-list"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-primary" id="bookmarkListClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reader -->
 <div id="reader">
   <div id="reader-bar">
@@ -470,6 +524,8 @@
     </div>
     <div class="right">
       <button class="icon-btn" id="readerStar">☆</button>
+      <button class="icon-btn" id="readerBookmark" title="この位置にしおりを挟む">🔖</button>
+      <button class="icon-btn" id="readerBookmarkList" title="しおり一覧">📑</button>
       <button class="icon-btn" id="readerSettings">Aa</button>
       <button class="icon-btn" id="readerDone">✓</button>
     </div>
@@ -606,6 +662,7 @@ document.getElementById("addSave").addEventListener("click", () => {
     status: "unread",
     favorite: false,
     pos: 0,
+    bookmarks: [],
     addedAt: Date.now()
   });
   persist();
@@ -641,8 +698,10 @@ function openReader(id) {
     render();
   }
 
-  // restore scroll position
-  requestAnimationFrame(() => {
+  // restore scroll position (wait for images to finish loading so scrollHeight is accurate)
+  const imgs = readerContent.querySelectorAll("img");
+  let pending = imgs.length;
+  function restoreScroll() {
     const max = readerBody.scrollHeight - readerBody.clientHeight;
     if (max > 0 && n.pos) {
       const frac = n.pos / n.content.length;
@@ -651,7 +710,22 @@ function openReader(id) {
     if (n.status === "read") {
       document.getElementById("reader-bottom").textContent = "ここまで読みました";
     }
-  });
+  }
+  if (pending === 0) {
+    requestAnimationFrame(restoreScroll);
+  } else {
+    imgs.forEach(img => {
+      if (img.complete) {
+        pending--;
+      } else {
+        img.addEventListener("load", () => { pending--; if (pending === 0) requestAnimationFrame(restoreScroll); });
+        img.addEventListener("error", () => { pending--; if (pending === 0) requestAnimationFrame(restoreScroll); });
+      }
+    });
+    if (pending === 0) requestAnimationFrame(restoreScroll);
+    // safety fallback in case some image never fires load/error
+    setTimeout(restoreScroll, 1500);
+  }
 }
 
 function closeReader() {
@@ -697,6 +771,86 @@ document.getElementById("readerDone").addEventListener("click", () => {
   n.status = "read";
   persist();
   closeReader();
+});
+
+/* ============ BOOKMARKS ============ */
+const bookmarkOverlay = document.getElementById("bookmarkOverlay");
+
+document.getElementById("readerBookmark").addEventListener("click", () => {
+  const n = data.newsletters.find(x => x.id === openId);
+  if (!n) return;
+  if (!n.bookmarks) n.bookmarks = [];
+
+  const max = readerBody.scrollHeight - readerBody.clientHeight;
+  const frac = max > 0 ? readerBody.scrollTop / max : 0;
+  const pos = Math.round(frac * n.content.length);
+
+  // snippet: grab surrounding plain text for context in the list
+  const snippet = n.content.slice(pos, pos + 60).replace(/\s+/g, " ").trim();
+
+  n.bookmarks.push({
+    id: uid(),
+    pos,
+    scrollFrac: frac,
+    snippet,
+    createdAt: Date.now()
+  });
+  persist();
+
+  const btn = document.getElementById("readerBookmark");
+  const original = btn.textContent;
+  btn.textContent = "✓";
+  setTimeout(() => { btn.textContent = original; }, 800);
+});
+
+document.getElementById("readerBookmarkList").addEventListener("click", () => {
+  renderBookmarkList();
+  bookmarkOverlay.classList.add("show");
+});
+document.getElementById("bookmarkListClose").addEventListener("click", () => bookmarkOverlay.classList.remove("show"));
+
+function renderBookmarkList() {
+  const n = data.newsletters.find(x => x.id === openId);
+  const list = document.getElementById("bookmarkList");
+  if (!n || !n.bookmarks || n.bookmarks.length === 0) {
+    list.innerHTML = `<div class="bookmark-empty">しおりはまだありません</div>`;
+    return;
+  }
+  const sorted = n.bookmarks.slice().sort((a, b) => a.pos - b.pos);
+  list.innerHTML = sorted.map(b => {
+    const d = new Date(b.createdAt);
+    const dateLabel = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    return `
+      <div class="bookmark-item" data-bid="${b.id}">
+        <button class="bookmark-main" data-jump="${b.id}">
+          <div>${dateLabel}</div>
+          <div class="bookmark-snippet">${escapeHtml(b.snippet || "")}…</div>
+        </button>
+        <button class="bookmark-del" data-bdel="${b.id}">削除</button>
+      </div>`;
+  }).join("");
+}
+
+document.getElementById("bookmarkList").addEventListener("click", e => {
+  const jump = e.target.closest("[data-jump]");
+  const del = e.target.closest("[data-bdel]");
+  const n = data.newsletters.find(x => x.id === openId);
+  if (!n || !n.bookmarks) return;
+
+  if (jump) {
+    const b = n.bookmarks.find(x => x.id === jump.dataset.jump);
+    if (b) {
+      const max = readerBody.scrollHeight - readerBody.clientHeight;
+      readerBody.scrollTo({ top: b.scrollFrac * max, behavior: "smooth" });
+    }
+    bookmarkOverlay.classList.remove("show");
+    return;
+  }
+  if (del) {
+    n.bookmarks = n.bookmarks.filter(x => x.id !== del.dataset.bdel);
+    persist();
+    renderBookmarkList();
+  }
 });
 
 /* ============ SETTINGS ============ */
@@ -772,6 +926,10 @@ window.addEventListener("load", () => {
         localStorage.setItem("nl-token", JSON.stringify({ token: accessToken, expiresAt }));
         document.getElementById("syncStatus").textContent = "同期中…";
         loadFromDrive();
+        scheduleSilentRefresh(expiresAt);
+      } else {
+        // silent refresh failed (e.g. consent required) -> fall back to manual login state
+        document.getElementById("syncStatus").textContent = "未ログイン";
       }
     }
   });
@@ -779,13 +937,34 @@ window.addEventListener("load", () => {
   // try to restore a still-valid token from a previous session
   try {
     const saved = JSON.parse(localStorage.getItem("nl-token") || "null");
-    if (saved && saved.token && saved.expiresAt > Date.now() + 60000) {
-      accessToken = saved.token;
-      document.getElementById("syncStatus").textContent = "同期中…";
-      loadFromDrive();
+    if (saved && saved.token) {
+      if (saved.expiresAt > Date.now() + 60000) {
+        accessToken = saved.token;
+        document.getElementById("syncStatus").textContent = "同期中…";
+        loadFromDrive();
+        scheduleSilentRefresh(saved.expiresAt);
+      } else {
+        // token expired while app was closed -> try silent refresh immediately
+        trySilentRefresh();
+      }
     }
   } catch (e) {}
 });
+
+function scheduleSilentRefresh(expiresAt) {
+  // refresh 5 minutes before expiry
+  const delay = Math.max(5000, expiresAt - Date.now() - 5 * 60 * 1000);
+  setTimeout(trySilentRefresh, delay);
+}
+
+function trySilentRefresh() {
+  if (!tokenClient) return;
+  try {
+    tokenClient.requestAccessToken({ prompt: "" });
+  } catch (e) {
+    console.error(e);
+  }
+}
 
 document.getElementById("signinBtn").addEventListener("click", () => {
   tokenClient.requestAccessToken();
@@ -969,6 +1148,7 @@ async function checkGmail() {
         status: "unread",
         favorite: false,
         pos: 0,
+        bookmarks: [],
         addedAt: Number(msg.internalDate) || Date.now()
       });
       data.importedIds.push(m.id);
