@@ -440,6 +440,22 @@
     font-size: 13px;
     padding: 24px 0;
   }
+
+  #loginGate{
+    display:none;
+    height:calc(100vh - 52px);
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    text-align:center;
+    padding:24px;
+  }
+  #loginGate.show{display:flex;}
+  #loginGate h2{margin-bottom:12px;}
+  #loginGate button{
+    background:#3a6b5c;color:#fff;padding:12px 20px;border-radius:8px;
+  }
+
 </style>
 </head>
 <body>
@@ -459,6 +475,8 @@
   <button class="tab" data-filter="read">完読</button>
   <button class="tab" data-filter="favorite">★お気に入り</button>
 </div>
+
+<div id="loginGate"><h2>Googleログインが必要です</h2><p>読みかけ位置・しおり・お気に入りを同期するため、ログインして利用してください。</p><button id="loginGateBtn">Googleでログイン</button></div>
 
 <div id="list"></div>
 
@@ -573,8 +591,23 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
+
+function isLoggedIn() {
+  return !!accessToken;
+}
+
+function updateLoginUI() {
+  const loggedIn = isLoggedIn();
+  document.getElementById("loginGate").classList.toggle("show", !loggedIn);
+  document.getElementById("tabs").style.display = loggedIn ? "flex" : "none";
+  document.getElementById("list").style.display = loggedIn ? "block" : "none";
+  document.getElementById("fab").style.display = loggedIn ? "flex" : "none";
+}
+
 /* ============ RENDER LIST ============ */
 function render() {
+  updateLoginUI();
+  if (!isLoggedIn()) return;
   applySettings();
   const list = document.getElementById("list");
   let items = data.newsletters.slice().sort((a,b) => b.addedAt - a.addedAt);
@@ -922,6 +955,7 @@ window.addEventListener("load", () => {
     callback: (resp) => {
       if (resp.access_token) {
         accessToken = resp.access_token;
+        updateLoginUI();
         const expiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000;
         localStorage.setItem("nl-token", JSON.stringify({ token: accessToken, expiresAt }));
         document.getElementById("syncStatus").textContent = "同期中…";
@@ -930,6 +964,7 @@ window.addEventListener("load", () => {
       } else {
         // silent refresh failed (e.g. consent required) -> fall back to manual login state
         document.getElementById("syncStatus").textContent = "未ログイン";
+        updateLoginUI();
       }
     }
   });
@@ -940,6 +975,7 @@ window.addEventListener("load", () => {
     if (saved && saved.token) {
       if (saved.expiresAt > Date.now() + 60000) {
         accessToken = saved.token;
+        updateLoginUI();
         document.getElementById("syncStatus").textContent = "同期中…";
         loadFromDrive();
         scheduleSilentRefresh(saved.expiresAt);
@@ -966,9 +1002,8 @@ function trySilentRefresh() {
   }
 }
 
-document.getElementById("signinBtn").addEventListener("click", () => {
-  tokenClient.requestAccessToken();
-});
+document.getElementById("signinBtn").addEventListener("click", () => { tokenClient.requestAccessToken(); });
+document.getElementById("loginGateBtn").addEventListener("click", () => { tokenClient.requestAccessToken(); });
 
 async function driveFetch(url, opts = {}) {
   opts.headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + accessToken });
@@ -1045,6 +1080,7 @@ async function saveToDrive(forceCreate) {
 }
 
 /* ============ INIT ============ */
+updateLoginUI();
 render();
 
 /* ============ GMAIL IMPORT ============ */
