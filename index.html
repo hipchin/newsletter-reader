@@ -274,6 +274,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 24px;
+    min-height: 0;
   }
   #reader-content {
     max-width: 640px;
@@ -457,6 +458,148 @@
     background:#3a6b5c;color:#fff;padding:12px 20px;border-radius:8px;
   }
 
+  /* ---------- AI Chat (AI MODULE - UI) ---------- */
+  #ai-panel {
+    border-top: 1px solid rgba(0,0,0,0.08);
+    background: var(--reader-bg, #fff);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    max-height: 52vh;
+  }
+  #ai-panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+    user-select: none;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+  #ai-panel-toggle .ai-toggle-arrow {
+    font-size: 11px;
+    color: var(--text-sub);
+    transition: transform 0.2s;
+  }
+  #ai-panel.open #ai-panel-toggle .ai-toggle-arrow {
+    transform: rotate(180deg);
+  }
+  #ai-panel-body {
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #ai-panel.open #ai-panel-body {
+    display: flex;
+  }
+  /* ショートカットボタン行 */
+  #ai-shortcuts {
+    display: flex;
+    gap: 6px;
+    padding: 0 12px 10px;
+    overflow-x: auto;
+    flex: none;
+  }
+  #ai-shortcuts::-webkit-scrollbar { display: none; }
+  .ai-shortcut-btn {
+    flex: none;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    background: none;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ai-shortcut-btn:active { background: var(--accent-soft); }
+  /* 会話履歴エリア */
+  #ai-history {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 14px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+  }
+  .ai-bubble {
+    max-width: 88%;
+    padding: 9px 13px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.7;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .ai-bubble.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 3px;
+  }
+  .ai-bubble.assistant {
+    align-self: flex-start;
+    background: var(--accent-soft);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+  }
+  .ai-bubble.thinking {
+    align-self: flex-start;
+    color: var(--text-sub);
+    font-style: italic;
+    background: none;
+    padding-left: 0;
+  }
+  .ai-bubble.error {
+    align-self: flex-start;
+    background: #fdecea;
+    color: #c0392b;
+    border-bottom-left-radius: 3px;
+  }
+  /* 入力欄 */
+  #ai-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 8px 12px 12px;
+    flex: none;
+  }
+  #ai-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    resize: none;
+    max-height: 80px;
+    line-height: 1.5;
+    outline: none;
+  }
+  #ai-input:focus { border-color: var(--accent); }
+  #ai-send-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    flex: none;
+    cursor: pointer;
+    border: none;
+  }
+  #ai-send-btn:disabled { opacity: 0.4; cursor: default; }
+
 </style>
 </head>
 <body>
@@ -552,6 +695,30 @@
   <div id="reader-body">
     <div id="reader-content"></div>
     <div id="reader-bottom"></div>
+  </div>
+  <!-- AI Chat Panel (AI MODULE - UI) -->
+  <div id="ai-panel">
+    <button id="ai-panel-toggle">
+      <span>🤖 AIと話す</span>
+      <span class="ai-toggle-arrow">▲</span>
+    </button>
+    <div id="ai-panel-body">
+      <!-- ショートカットボタン -->
+      <div id="ai-shortcuts">
+        <button class="ai-shortcut-btn" data-mode="要約">要約</button>
+        <button class="ai-shortcut-btn" data-mode="論点">論点</button>
+        <button class="ai-shortcut-btn" data-mode="疑問点">疑問点</button>
+        <button class="ai-shortcut-btn" data-mode="反論">反論</button>
+        <button class="ai-shortcut-btn" data-mode="応用">応用</button>
+      </div>
+      <!-- 会話履歴 -->
+      <div id="ai-history"></div>
+      <!-- 入力欄 -->
+      <div id="ai-input-row">
+        <textarea id="ai-input" placeholder="この記事について質問…" rows="1"></textarea>
+        <button id="ai-send-btn" title="送信">↑</button>
+      </div>
+    </div>
   </div>
 </div>
 <button id="scrollTopBtn" title="冒頭に戻る">↑</button>
@@ -731,6 +898,9 @@ function openReader(id) {
     persist();
     render();
   }
+
+  // AI MODULE: 記事ごとの会話履歴をパネルに復元（既存機能に影響なし）
+  aiResetPanel(id);
 
   // restore scroll position (wait for images to finish loading so scrollHeight is accurate)
   const imgs = readerContent.querySelectorAll("img");
@@ -1083,6 +1253,199 @@ async function saveToDrive(forceCreate) {
 /* ============ INIT ============ */
 updateLoginUI();
 render();
+
+/* ============ AI MODULE ============ */
+// 会話履歴は記事ごとに localStorage のキー "nl-ai-chat:{記事ID}" で管理。
+// Drive同期には含まない。
+// サーバーエンドポイント: AI_API_URL の /api/ai へ POST。
+
+/* --- AI Storage --- */
+
+// TODO: Cloudflare WorkerのURLが確定したらここを書き換える
+const AI_API_URL = "https://broad-scene-f489.tackro-i.workers.dev";
+
+const AI_SHORTCUTS = [
+  { mode: "要約",  label: "要約"  },
+  { mode: "論点",  label: "論点"  },
+  { mode: "疑問点", label: "疑問点" },
+  { mode: "反論",  label: "反論"  },
+  { mode: "応用",  label: "応用"  },
+];
+
+// 記事IDに紐づいた会話履歴を取得（なければ空配列）
+function aiLoadHistory(articleId) {
+  try {
+    const raw = localStorage.getItem("nl-ai-chat:" + articleId);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+// 会話履歴を保存
+function aiSaveHistory(articleId, history) {
+  try {
+    localStorage.setItem("nl-ai-chat:" + articleId, JSON.stringify(history));
+  } catch (e) { console.error("AI履歴保存エラー:", e); }
+}
+
+// 会話履歴をクリア
+function aiClearHistory(articleId) {
+  localStorage.removeItem("nl-ai-chat:" + articleId);
+}
+
+/* --- AI API --- */
+
+// サーバー側 /api/ai へPOST。
+// body: { mode?, title, content, question?, history }
+// history: これまでの { role:"user"|"assistant", content:string }[] をそのまま渡す。
+// サーバー側で記事コンテキストをsystemプロンプトに付加するため、
+// フロントは毎回 title と content を送る（重複コストはあるが実装がシンプル）。
+async function aiCallApi({ mode, question, title, content, history }) {
+  const res = await fetch(AI_API_URL + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, title, content, question, history }),
+  });
+  if (!res.ok) {
+    let msg = "サーバーエラー（" + res.status + "）";
+    try { const j = await res.json(); msg = j.error || msg; } catch {}
+    throw new Error(msg);
+  }
+  const json = await res.json();
+  return json.reply;
+}
+
+/* --- AI UI --- */
+
+let aiPanelOpen = false;
+
+// パネルを開閉するトグル
+document.getElementById("ai-panel-toggle").addEventListener("click", () => {
+  aiPanelOpen = !aiPanelOpen;
+  document.getElementById("ai-panel").classList.toggle("open", aiPanelOpen);
+  if (aiPanelOpen) aiScrollHistory();
+});
+
+// ショートカットボタン押下 → 対応するmodeで送信
+document.getElementById("ai-shortcuts").addEventListener("click", e => {
+  const btn = e.target.closest(".ai-shortcut-btn");
+  if (!btn) return;
+  const mode = btn.dataset.mode;
+  aiSubmit({ mode });
+});
+
+// 送信ボタン
+document.getElementById("ai-send-btn").addEventListener("click", () => {
+  const q = document.getElementById("ai-input").value.trim();
+  if (!q) return;
+  aiSubmit({ question: q });
+});
+
+// Enterキー送信（Shift+Enterは改行）
+document.getElementById("ai-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const q = document.getElementById("ai-input").value.trim();
+    if (q) aiSubmit({ question: q });
+  }
+});
+
+// テキストエリアの高さを内容に合わせて自動調整
+document.getElementById("ai-input").addEventListener("input", function() {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 80) + "px";
+});
+
+// 送信処理本体
+async function aiSubmit({ mode, question }) {
+  if (!openId) return;
+  const n = data.newsletters.find(x => x.id === openId);
+  if (!n) return;
+
+  const userText = mode
+    ? { 要約:"この記事を要約してください。", 論点:"この記事の論点を整理してください。",
+        疑問点:"この記事への疑問点を挙げてください。", 反論:"この記事への反論を考えてください。",
+        応用:"この記事を自分の仕事や生活に応用する示唆を教えてください。" }[mode]
+    : question;
+
+  // 入力欄をクリア
+  document.getElementById("ai-input").value = "";
+  document.getElementById("ai-input").style.height = "auto";
+
+  // 履歴を取得
+  const history = aiLoadHistory(openId);
+
+  // ユーザー発言をUIに追加
+  aiAppendBubble("user", userText);
+
+  // 「考え中…」表示
+  const thinkingEl = aiAppendBubble("thinking", "考え中…");
+
+  // 送信ボタンを無効化
+  document.getElementById("ai-send-btn").disabled = true;
+
+  try {
+    const reply = await aiCallApi({
+      mode,
+      question: mode ? undefined : question,
+      title: n.title,
+      content: n.content,
+      history,  // これまでの会話履歴（サーバー側でsystemの次に付加）
+    });
+
+    // 「考え中…」を削除
+    thinkingEl.remove();
+
+    // AIの返答をUIに追加
+    aiAppendBubble("assistant", reply);
+
+    // 履歴を更新して保存（userとassistantのペアを追加）
+    history.push({ role: "user", content: userText });
+    history.push({ role: "assistant", content: reply });
+    aiSaveHistory(openId, history);
+
+  } catch (e) {
+    thinkingEl.remove();
+    aiAppendBubble("error", "エラー: " + e.message);
+  } finally {
+    document.getElementById("ai-send-btn").disabled = false;
+  }
+}
+
+// 吹き出しをai-historyに追加してスクロール
+function aiAppendBubble(type, text) {
+  const el = document.createElement("div");
+  el.className = "ai-bubble " + type;
+  el.textContent = text;
+  document.getElementById("ai-history").appendChild(el);
+  aiScrollHistory();
+  return el;
+}
+
+// 履歴エリアを最下部にスクロール
+function aiScrollHistory() {
+  const h = document.getElementById("ai-history");
+  h.scrollTop = h.scrollHeight;
+}
+
+// 記事を開いたときにAIパネルの状態をリセット・履歴を復元
+function aiResetPanel(articleId) {
+  // パネルは閉じた状態で開始
+  aiPanelOpen = false;
+  document.getElementById("ai-panel").classList.remove("open");
+
+  // 会話履歴をlocalStorageから復元してUIに反映
+  const history = aiLoadHistory(articleId);
+  const histEl = document.getElementById("ai-history");
+  histEl.innerHTML = "";
+  history.forEach(msg => {
+    const el = document.createElement("div");
+    el.className = "ai-bubble " + msg.role;
+    el.textContent = msg.content;
+    histEl.appendChild(el);
+  });
+}
+
+/* ============================== */
 
 /* ============ GMAIL IMPORT ============ */
 function base64UrlDecode(str) {
