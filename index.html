@@ -498,6 +498,45 @@
   #ai-panel.open #ai-panel-body {
     display: flex;
   }
+  /* セクション選択行 */
+  #ai-section-row {
+    display: none; /* h2が存在する場合のみJS側でflexに切り替え */
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px 8px;
+    overflow-x: auto;
+    flex: none;
+  }
+  #ai-section-row::-webkit-scrollbar { display: none; }
+  #ai-section-label {
+    font-size: 11px;
+    color: var(--text-sub);
+    white-space: nowrap;
+    flex: none;
+  }
+  .ai-section-btn {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+    background: none;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ai-section-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+  .ai-section-btn:active { background: var(--accent-soft); }
+
   /* ショートカットボタン行 */
   #ai-shortcuts {
     display: flex;
@@ -703,6 +742,10 @@
       <span class="ai-toggle-arrow">▲</span>
     </button>
     <div id="ai-panel-body">
+      <!-- セクション選択（h2が存在する記事のみ表示） -->
+      <div id="ai-section-row">
+        <span id="ai-section-label">対象：</span>
+      </div>
       <!-- ショートカットボタン -->
       <div id="ai-shortcuts">
         <button class="ai-shortcut-btn" data-mode="要約">要約</button>
@@ -1258,19 +1301,12 @@ render();
 // 会話履歴は記事ごとに localStorage のキー "nl-ai-chat:{記事ID}" で管理。
 // Drive同期には含まない。
 // サーバーエンドポイント: AI_API_URL の /api/ai へ POST。
+// セクション分割: 記事HTMLの<h2>タグを区切りとして検出し、
+// 選択セクションの本文のみをAIに送る。h2が存在しない記事は全文モード。
 
 /* --- AI Storage --- */
 
-// TODO: Cloudflare WorkerのURLが確定したらここを書き換える
 const AI_API_URL = "https://broad-scene-f489.tackro-i.workers.dev";
-
-const AI_SHORTCUTS = [
-  { mode: "要約",  label: "要約"  },
-  { mode: "論点",  label: "論点"  },
-  { mode: "疑問点", label: "疑問点" },
-  { mode: "反論",  label: "反論"  },
-  { mode: "応用",  label: "応用"  },
-];
 
 // 記事IDに紐づいた会話履歴を取得（なければ空配列）
 function aiLoadHistory(articleId) {
@@ -1296,9 +1332,7 @@ function aiClearHistory(articleId) {
 
 // サーバー側 /api/ai へPOST。
 // body: { mode?, title, content, question?, history }
-// history: これまでの { role:"user"|"assistant", content:string }[] をそのまま渡す。
-// サーバー側で記事コンテキストをsystemプロンプトに付加するため、
-// フロントは毎回 title と content を送る（重複コストはあるが実装がシンプル）。
+// contentには選択セクションのプレーンテキストを渡す（全文 or セクション本文）。
 async function aiCallApi({ mode, question, title, content, history }) {
   const res = await fetch(AI_API_URL + "/api/ai", {
     method: "POST",
@@ -1318,6 +1352,112 @@ async function aiCallApi({ mode, question, title, content, history }) {
 
 let aiPanelOpen = false;
 
+// 現在選択中のセクションインデックス（-1 = 全文）
+let aiCurrentSection = -1;
+
+// 記事のセクション情報: [{ heading, content }]
+// heading: h2のテキスト、content: そのセクションのプレーンテキスト
+let aiSections = [];
+
+// 記事HTMLから<h2>を区切りとしてセクション分割する
+// h2より前の本文は「全文」に含めるが個別セクションとしては扱わない
+function aiParseSection(n) {
+  // htmlがない場合はセクション分割不可 → 空配列を返す
+  if (!n.html) return [];
+
+  const doc = new DOMParser().parseFromString(n.html, "text/html");
+  const body = doc.body;
+  const sections = [];
+  let currentHeading = null;
+  let currentNodes = [];
+
+  function flushSection() {
+    if (!currentHeading) return; // h2前の本文はスキップ
+    const text = currentNodes
+      .map(el => el.textContent || "")
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (text) sections.push({ heading: currentHeading, content: text });
+  }
+
+  body.childNodes.forEach(node => {
+    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "H2") {
+      flushSection();
+      currentHeading = node.textContent.trim();
+      currentNodes = [];
+    } else {
+      currentNodes.push(node);
+    }
+  });
+  flushSection();
+
+  return sections;
+}
+
+// セクション選択行を構築する
+function aiRenderSectionRow(articleId) {
+  const sectionRow = document.getElementById("ai-section-row");
+  // ラベル以外の既存ボタンを削除
+  const label = document.getElementById("ai-section-label");
+  sectionRow.innerHTML = "";
+  sectionRow.appendChild(label);
+
+  if (aiSections.length === 0) {
+    // h2なし → セクション行を非表示
+    sectionRow.style.display = "none";
+    aiCurrentSection = -1;
+    return;
+  }
+
+  // h2あり → セクション行を表示
+  sectionRow.style.display = "flex";
+
+  // 「全文」ボタン
+  const allBtn = document.createElement("button");
+  allBtn.className = "ai-section-btn" + (aiCurrentSection === -1 ? " active" : "");
+  allBtn.textContent = "全文";
+  allBtn.dataset.section = "-1";
+  sectionRow.appendChild(allBtn);
+
+  // 各セクションボタン
+  aiSections.forEach((sec, i) => {
+    const btn = document.createElement("button");
+    btn.className = "ai-section-btn" + (aiCurrentSection === i ? " active" : "");
+    // 見出しが長い場合は省略（CSSのtext-overflowで対応済み）
+    btn.textContent = sec.heading;
+    btn.title = sec.heading; // ホバーで全文表示
+    btn.dataset.section = String(i);
+    sectionRow.appendChild(btn);
+  });
+}
+
+// セクション選択クリックイベント
+document.getElementById("ai-section-row").addEventListener("click", e => {
+  const btn = e.target.closest(".ai-section-btn");
+  if (!btn) return;
+  aiCurrentSection = parseInt(btn.dataset.section, 10);
+  // アクティブ状態を更新
+  document.querySelectorAll(".ai-section-btn").forEach(b => {
+    b.classList.toggle("active", parseInt(b.dataset.section, 10) === aiCurrentSection);
+  });
+});
+
+// 現在選択中のセクションのコンテンツを返す
+// セクション未選択(-1)または全文の場合は記事全体のcontentを返す
+function aiGetTargetContent(n) {
+  if (aiCurrentSection === -1 || aiSections.length === 0) {
+    return n.content; // 全文（プレーンテキスト）
+  }
+  return aiSections[aiCurrentSection].content;
+}
+
+// 現在選択中のセクションのタイトルラベルを返す（ログ・ユーザー表示用）
+function aiGetSectionLabel() {
+  if (aiCurrentSection === -1 || aiSections.length === 0) return null;
+  return aiSections[aiCurrentSection].heading;
+}
+
 // パネルを開閉するトグル
 document.getElementById("ai-panel-toggle").addEventListener("click", () => {
   aiPanelOpen = !aiPanelOpen;
@@ -1329,15 +1469,13 @@ document.getElementById("ai-panel-toggle").addEventListener("click", () => {
 document.getElementById("ai-shortcuts").addEventListener("click", e => {
   const btn = e.target.closest(".ai-shortcut-btn");
   if (!btn) return;
-  const mode = btn.dataset.mode;
-  aiSubmit({ mode });
+  aiSubmit({ mode: btn.dataset.mode });
 });
 
 // 送信ボタン
 document.getElementById("ai-send-btn").addEventListener("click", () => {
   const q = document.getElementById("ai-input").value.trim();
-  if (!q) return;
-  aiSubmit({ question: q });
+  if (q) aiSubmit({ question: q });
 });
 
 // Enterキー送信（Shift+Enterは改行）
@@ -1361,11 +1499,24 @@ async function aiSubmit({ mode, question }) {
   const n = data.newsletters.find(x => x.id === openId);
   if (!n) return;
 
-  const userText = mode
-    ? { 要約:"この記事を要約してください。", 論点:"この記事の論点を整理してください。",
-        疑問点:"この記事への疑問点を挙げてください。", 反論:"この記事への反論を考えてください。",
-        応用:"この記事を自分の仕事や生活に応用する示唆を教えてください。" }[mode]
-    : question;
+  const MODE_LABELS = {
+    要約:  "この記事を要約してください。",
+    論点:  "この記事の論点を整理してください。",
+    疑問点: "この記事への疑問点を挙げてください。",
+    反論:  "この記事への反論を考えてください。",
+    応用:  "この記事を自分の仕事や生活に応用する示唆を教えてください。",
+  };
+
+  const userText = mode ? MODE_LABELS[mode] : question;
+
+  // 対象コンテンツを確定（全文 or 選択セクション）
+  const targetContent = aiGetTargetContent(n);
+  const sectionLabel = aiGetSectionLabel();
+
+  // セクション指定がある場合はtitleに付加してAIに文脈を伝える
+  const titleForApi = sectionLabel
+    ? n.title + "【セクション：" + sectionLabel + "】"
+    : n.title;
 
   // 入力欄をクリア
   document.getElementById("ai-input").value = "";
@@ -1374,8 +1525,11 @@ async function aiSubmit({ mode, question }) {
   // 履歴を取得
   const history = aiLoadHistory(openId);
 
-  // ユーザー発言をUIに追加
-  aiAppendBubble("user", userText);
+  // ユーザー発言をUIに追加（セクション名を表示）
+  const displayText = sectionLabel
+    ? "【" + sectionLabel + "】" + userText
+    : userText;
+  aiAppendBubble("user", displayText);
 
   // 「考え中…」表示
   const thinkingEl = aiAppendBubble("thinking", "考え中…");
@@ -1387,19 +1541,16 @@ async function aiSubmit({ mode, question }) {
     const reply = await aiCallApi({
       mode,
       question: mode ? undefined : question,
-      title: n.title,
-      content: n.content,
-      history,  // これまでの会話履歴（サーバー側でsystemの次に付加）
+      title: titleForApi,
+      content: targetContent,
+      history,
     });
 
-    // 「考え中…」を削除
     thinkingEl.remove();
-
-    // AIの返答をUIに追加
     aiAppendBubble("assistant", reply);
 
-    // 履歴を更新して保存（userとassistantのペアを追加）
-    history.push({ role: "user", content: userText });
+    // 履歴を更新して保存
+    history.push({ role: "user", content: displayText });
     history.push({ role: "assistant", content: reply });
     aiSaveHistory(openId, history);
 
@@ -1431,7 +1582,15 @@ function aiScrollHistory() {
 function aiResetPanel(articleId) {
   // パネルは閉じた状態で開始
   aiPanelOpen = false;
+  aiCurrentSection = -1;
   document.getElementById("ai-panel").classList.remove("open");
+
+  // 記事のセクションを解析
+  const n = data.newsletters.find(x => x.id === articleId);
+  aiSections = n ? aiParseSection(n) : [];
+
+  // セクション選択行を構築
+  aiRenderSectionRow(articleId);
 
   // 会話履歴をlocalStorageから復元してUIに反映
   const history = aiLoadHistory(articleId);
