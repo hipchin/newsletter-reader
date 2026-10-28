@@ -1,0 +1,19 @@
+# newsletter-reader の AI 機能(OpenAI プロキシ)。
+# 以前はダッシュボード上でだけ管理していたため、デプロイ中のコードをここに取り込んだ。
+name = "broad-scene-f489"
+main = "worker.js"
+compatibility_date = "2026-06-24"
+
+# Worker Rate Limiting binding。接続元IPごとに最大10回/分。
+# namespace_id はアカウント内で一意にする(yokohama-lib-reserve / youtube-caption-summarizer は 1001)。
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60
+
+# 以下は `wrangler secret put` で設定する(このファイルには書かない)。
+# OPENAI_API_KEY
+# APP_KEY(画面で入力する利用の合言葉。未設定だと全リクエストを拒否する)

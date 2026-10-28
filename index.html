@@ -626,6 +626,27 @@
     outline: none;
   }
   #ai-input:focus { border-color: var(--accent); }
+  /* 合言葉入力(未保存のとき、または合言葉が違ったときだけ表示) */
+  #ai-key-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 12px 0;
+    flex: none;
+    font-size: 13px;
+  }
+  #ai-key-row[hidden] { display: none; }
+  #ai-key-input {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 16px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+  }
+  #ai-key-input:focus { border-color: var(--accent); }
   #ai-send-btn {
     width: 36px; height: 36px;
     border-radius: 50%;
@@ -756,6 +777,11 @@
       </div>
       <!-- 会話履歴 -->
       <div id="ai-history"></div>
+      <!-- 合言葉(初回だけ入力。AIの応答が返ったらこの端末に保存) -->
+      <div id="ai-key-row" hidden>
+        <label for="ai-key-input">合言葉(初回のみ)</label>
+        <input id="ai-key-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
       <!-- 入力欄 -->
       <div id="ai-input-row">
         <textarea id="ai-input" placeholder="この記事について質問…" rows="1"></textarea>
@@ -1328,21 +1354,64 @@ function aiClearHistory(articleId) {
   localStorage.removeItem("nl-ai-chat:" + articleId);
 }
 
+/* --- AI 合言葉 --- */
+// Worker は合言葉(シークレット APP_KEY)がないと応答しない。
+// 初回だけ入力してもらい、応答が返ったらこの端末の localStorage に保存する(配信物には含めない)。
+
+const AI_KEY_STORAGE = "nl-ai-key";
+
+function aiLoadKey() {
+  try { return localStorage.getItem(AI_KEY_STORAGE) || ""; } catch (e) { return ""; }
+}
+
+function aiSaveKey(key) {
+  try { localStorage.setItem(AI_KEY_STORAGE, key); } catch (e) { /* 次回また入力してもらう */ }
+}
+
+function aiForgetKey() {
+  try { localStorage.removeItem(AI_KEY_STORAGE); } catch (e) { /* 何もしない */ }
+}
+
+function aiShowKeyRow() {
+  document.getElementById("ai-key-row").hidden = false;
+  document.getElementById("ai-key-input").focus();
+}
+
+function aiHideKeyRow() {
+  document.getElementById("ai-key-row").hidden = true;
+  document.getElementById("ai-key-input").value = "";
+}
+
 /* --- AI API --- */
 
 // サーバー側 /api/ai へPOST。
 // body: { mode?, title, content, question?, history }
 // contentには選択セクションのプレーンテキストを渡す（全文 or セクション本文）。
 async function aiCallApi({ mode, question, title, content, history }) {
+  const key = aiLoadKey() || document.getElementById("ai-key-input").value.trim();
+  if (!key) {
+    aiShowKeyRow();
+    throw new Error("合言葉を入力してから、もう一度送ってください");
+  }
   const res = await fetch(AI_API_URL + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-app-key": key },
     body: JSON.stringify({ mode, title, content, question, history }),
   });
+  if (res.status === 401) {
+    aiForgetKey();
+    aiShowKeyRow();
+    throw new Error("合言葉が違います。入力し直してください");
+  }
   if (!res.ok) {
     let msg = "サーバーエラー（" + res.status + "）";
     try { const j = await res.json(); msg = j.error || msg; } catch {}
     throw new Error(msg);
+  }
+  // 応答が返った合言葉だけを保存する
+  if (!aiLoadKey()) {
+    aiSaveKey(key);
+    aiHideKeyRow();
   }
   const json = await res.json();
   return json.reply;
@@ -1459,6 +1528,8 @@ function aiGetSectionLabel() {
 }
 
 // パネルを開閉するトグル
+if (!aiLoadKey()) document.getElementById("ai-key-row").hidden = false;
+
 document.getElementById("ai-panel-toggle").addEventListener("click", () => {
   aiPanelOpen = !aiPanelOpen;
   document.getElementById("ai-panel").classList.toggle("open", aiPanelOpen);
