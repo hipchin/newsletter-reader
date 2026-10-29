@@ -50,7 +50,8 @@ export default {
       return corsResponse(null, 204);
     }
 
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/api/ai") {
+    const pathname = new URL(request.url).pathname;
+    if (request.method !== "POST" || (pathname !== "/api/ai" && pathname !== "/api/check-key")) {
       return corsResponse(JSON.stringify({ error: "Not found" }), 404);
     }
 
@@ -69,6 +70,11 @@ export default {
     }
     if (!(await sameSecret(normalizeKey(request.headers.get(APP_KEY_HEADER), true), normalizeKey(env.APP_KEY, false)))) {
       return corsResponse(JSON.stringify({ error: "unauthorized" }), 401);
+    }
+
+    // 画面の「保存」ボタン用。合言葉が正しいかだけを返し、OpenAI API は呼ばない
+    if (pathname === "/api/check-key") {
+      return corsResponse(JSON.stringify({ ok: true }), 200);
     }
 
     // [SECURITY] リクエストサイズ制限

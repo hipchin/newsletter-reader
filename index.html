@@ -647,6 +647,21 @@
     outline: none;
   }
   #ai-key-input:focus { border-color: var(--accent); }
+  #ai-key-input-row { display: flex; gap: 8px; }
+  #ai-key-input { flex: 1; min-width: 0; }
+  #ai-key-save-btn {
+    flex: none;
+    padding: 0 16px;
+    border-radius: 20px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #ai-key-save-btn:disabled { opacity: 0.4; cursor: default; }
+  #ai-key-message { font-size: 12px; color: var(--text-sub); }
+  #ai-key-message.error { color: #c0392b; }
   #ai-send-btn {
     width: 36px; height: 36px;
     border-radius: 50%;
@@ -767,7 +782,11 @@
       <div id="ai-key-row" hidden>
         <label for="ai-key-input">合言葉(初回のみ)</label>
         <!-- type="password" だと iPhone で英数字キーボードしか出ず日本語を入力できないため text にする -->
-        <input id="ai-key-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <div id="ai-key-input-row">
+          <input id="ai-key-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <button id="ai-key-save-btn" type="button">保存</button>
+        </div>
+        <span id="ai-key-message">合言葉の確認だけなので料金はかかりません</span>
       </div>
       <!-- セクション選択（h2が存在する記事のみ表示） -->
       <div id="ai-section-row">
@@ -1383,6 +1402,38 @@ function aiHideKeyRow() {
   document.getElementById("ai-key-input").value = "";
 }
 
+// 「保存」ボタン: Worker の /api/check-key で合言葉だけを確かめる(OpenAI API は呼ばない)
+async function aiSaveKeyFromInput() {
+  const input = document.getElementById("ai-key-input");
+  const btn = document.getElementById("ai-key-save-btn");
+  const msg = document.getElementById("ai-key-message");
+  const key = input.value.normalize("NFC").trim();
+  const showMsg = (text) => { msg.textContent = text; msg.classList.add("error"); };
+  if (!key) { showMsg("合言葉を入力してください"); input.focus(); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(AI_API_URL + "/api/check-key", {
+      method: "POST",
+      headers: { "x-app-key": encodeURIComponent(key) },
+    });
+    if (res.status === 401) { showMsg("合言葉が違います。入力し直してください"); input.focus(); return; }
+    if (!res.ok) {
+      let text = "合言葉を確認できませんでした（" + res.status + "）";
+      try { const j = await res.json(); text = j.error || text; } catch {}
+      showMsg(text);
+      return;
+    }
+    aiSaveKey(key);
+    aiHideKeyRow();
+    msg.textContent = "合言葉の確認だけなので料金はかかりません";
+    msg.classList.remove("error");
+  } catch (e) {
+    showMsg("通信エラーが発生しました");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* --- AI API --- */
 
 // サーバー側 /api/ai へPOST。
@@ -1531,6 +1582,10 @@ function aiGetSectionLabel() {
 
 // パネルを開閉するトグル
 if (!aiLoadKey()) document.getElementById("ai-key-row").hidden = false;
+document.getElementById("ai-key-save-btn").addEventListener("click", aiSaveKeyFromInput);
+document.getElementById("ai-key-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing) aiSaveKeyFromInput();
+});
 
 document.getElementById("ai-panel-toggle").addEventListener("click", () => {
   aiPanelOpen = !aiPanelOpen;
