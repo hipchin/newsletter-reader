@@ -67,7 +67,7 @@ export default {
     if (!env.APP_KEY) {
       return corsResponse(JSON.stringify({ error: "サーバーの設定が不完全です" }), 503);
     }
-    if (!(await sameSecret(request.headers.get(APP_KEY_HEADER) || "", env.APP_KEY))) {
+    if (!(await sameSecret(normalizeKey(request.headers.get(APP_KEY_HEADER), true), normalizeKey(env.APP_KEY, false)))) {
       return corsResponse(JSON.stringify({ error: "unauthorized" }), 401);
     }
 
@@ -175,6 +175,20 @@ function corsResponse(body, status) {
       "Access-Control-Allow-Headers": `Content-Type, ${APP_KEY_HEADER}`,
     },
   });
+}
+
+// 日本語の合言葉も使えるよう、画面側は encodeURIComponent してヘッダーに載せる(ヘッダーは ASCII しか送れない)。
+// ここで元に戻し、Unicode 正規化と前後の空白除去をそろえてから比べる。
+function normalizeKey(value, encoded) {
+  let s = value || "";
+  if (encoded) {
+    try {
+      s = decodeURIComponent(s);
+    } catch {
+      // 不正な % 表記はそのまま比べる(一致しないので拒否される)
+    }
+  }
+  return s.normalize("NFC").trim();
 }
 
 // 長さや一致した位置が処理時間に出ないよう、ハッシュ同士を定数時間で比べる

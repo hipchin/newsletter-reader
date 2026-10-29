@@ -631,7 +631,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 8px 12px 0;
+    padding: 0 12px 8px;
     flex: none;
     font-size: 13px;
   }
@@ -763,6 +763,12 @@
       <span class="ai-toggle-arrow">▲</span>
     </button>
     <div id="ai-panel-body">
+      <!-- 合言葉(初回だけ入力。AIの応答が返ったらこの端末に保存)。目に入るようパネルの一番上に置く -->
+      <div id="ai-key-row" hidden>
+        <label for="ai-key-input">合言葉(初回のみ)</label>
+        <!-- type="password" だと iPhone で英数字キーボードしか出ず日本語を入力できないため text にする -->
+        <input id="ai-key-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
       <!-- セクション選択（h2が存在する記事のみ表示） -->
       <div id="ai-section-row">
         <span id="ai-section-label">対象：</span>
@@ -777,11 +783,6 @@
       </div>
       <!-- 会話履歴 -->
       <div id="ai-history"></div>
-      <!-- 合言葉(初回だけ入力。AIの応答が返ったらこの端末に保存) -->
-      <div id="ai-key-row" hidden>
-        <label for="ai-key-input">合言葉(初回のみ)</label>
-        <input id="ai-key-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
       <!-- 入力欄 -->
       <div id="ai-input-row">
         <textarea id="ai-input" placeholder="この記事について質問…" rows="1"></textarea>
@@ -1388,14 +1389,15 @@ function aiHideKeyRow() {
 // body: { mode?, title, content, question?, history }
 // contentには選択セクションのプレーンテキストを渡す（全文 or セクション本文）。
 async function aiCallApi({ mode, question, title, content, history }) {
-  const key = aiLoadKey() || document.getElementById("ai-key-input").value.trim();
+  const key = aiLoadKey() || document.getElementById("ai-key-input").value.normalize("NFC").trim();
   if (!key) {
     aiShowKeyRow();
     throw new Error("合言葉を入力してから、もう一度送ってください");
   }
   const res = await fetch(AI_API_URL + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-app-key": key },
+    // ヘッダーは ASCII しか送れないため、日本語の合言葉も通るよう encodeURIComponent する
+    headers: { "Content-Type": "application/json", "x-app-key": encodeURIComponent(key) },
     body: JSON.stringify({ mode, title, content, question, history }),
   });
   if (res.status === 401) {
